@@ -1,0 +1,21 @@
+{
+  "name": "nextalk-node",
+  "version": "2.0.0",
+  "description": "NexTalk WebSocket Node — независимый узел передачи сообщений",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js 3001"
+  },
+  "keywords": [
+    "websocket",
+    "messenger",
+    "nextalk"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^18.0.4",
+    "mysql2": "^3.24.4",
+    "ws": "^8.18.0"
+  }
+}
