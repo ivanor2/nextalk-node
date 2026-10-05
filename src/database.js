@@ -2,7 +2,7 @@
 
 const fs       = require('fs');
 const path     = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const config   = require('./config');
 const log      = require('./logger');
 
@@ -12,13 +12,13 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(config.DB_PATH);
+const db = new DatabaseSync(config.DB_PATH);
 
 // Оптимизации SQLite
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-db.pragma('foreign_keys = ON');
-db.pragma('busy_timeout = 5000');
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA synchronous = NORMAL');
+db.exec('PRAGMA foreign_keys = ON');
+db.exec('PRAGMA busy_timeout = 5000');
 
 // ── Автоматическая миграция ──────────────────────────────────
 function migrate() {
@@ -128,13 +128,20 @@ const stmts = {
 
 // ── Транзакции ───────────────────────────────────────────────
 const transactions = {
-  createChat: db.transaction((userId, username, targetUserId, targetUsername) => {
-    const result = stmts.createChat.run();
-    const chatId = result.lastInsertRowid;
-    stmts.addChatMember.run(chatId, userId, username);
-    stmts.addChatMember.run(chatId, targetUserId, targetUsername || '');
-    return chatId;
-  }),
+  createChat: (userId, username, targetUserId, targetUsername) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = stmts.createChat.run();
+      const chatId = result.lastInsertRowid;
+      stmts.addChatMember.run(chatId, userId, username);
+      stmts.addChatMember.run(chatId, targetUserId, targetUsername || '');
+      db.exec('COMMIT');
+      return chatId;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  },
 };
 
 module.exports = { db, stmts, transactions };

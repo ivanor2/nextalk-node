@@ -30,7 +30,7 @@ const httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${config.PORT}`);
 
   // Health
-  if (url.pathname === '/health' || url.pathname === '/') {
+  if (url.pathname === '/health' || url.pathname === '/' || url.pathname === '/api/health') {
     let dbOk = false;
     try { db.prepare('SELECT 1').get(); dbOk = true; } catch (e) {}
 
@@ -68,6 +68,43 @@ const httpServer = http.createServer(async (req, res) => {
 // ── WebSocket Server ──────────────────────────────────────────
 createWSS(httpServer);
 
+// ── LocalTunnel helper ────────────────────────────────────────
+async function startTunnel() {
+  if (!config.LOCALTUNNEL_ENABLED) return;
+
+  const localtunnel = require('localtunnel');
+  const opts = { port: config.PORT };
+  if (config.LOCALTUNNEL_SUBDOMAIN) opts.subdomain = config.LOCALTUNNEL_SUBDOMAIN;
+
+  try {
+    const tunnel = await localtunnel(opts);
+
+    console.log(`
+╔═══════════════════════════════════════════════════╗
+║  🌐 LocalTunnel active                           ║
+║  URL : ${tunnel.url.padEnd(42)}║
+╚═══════════════════════════════════════════════════╝
+`);
+    log.info(`LocalTunnel opened: ${tunnel.url}`);
+
+    tunnel.on('close', () => {
+      log.warn('LocalTunnel closed, reconnecting in 3s...');
+      setTimeout(startTunnel, 3000);
+    });
+
+    tunnel.on('error', (err) => {
+      log.error('LocalTunnel error', { error: err.message });
+    });
+
+    // Keep reference for graceful shutdown
+    httpServer.__tunnel = tunnel;
+  } catch (err) {
+    log.error('Failed to open LocalTunnel', { error: err.message });
+    log.info('Retrying LocalTunnel in 5s...');
+    setTimeout(startTunnel, 5000);
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────
 httpServer.listen(config.PORT, '0.0.0.0', () => {
   const dbSize = fs.existsSync(config.DB_PATH)
@@ -87,11 +124,15 @@ httpServer.listen(config.PORT, '0.0.0.0', () => {
 ╚═══════════════════════════════════════════════════╝
 `);
   log.info(`Server started on port ${config.PORT}`);
+
+  // Start LocalTunnel if enabled
+  startTunnel();
 });
 
 // ── Graceful Shutdown ─────────────────────────────────────────
 process.on('SIGINT', () => {
   log.info('Shutdown...');
+  if (httpServer.__tunnel) httpServer.__tunnel.close();
   const { wsSend } = require('./src/ws/handlers');
   wsState.clients.forEach(c => { wsSend(c.ws, 'server_shutdown', {}); c.ws.close(); });
   httpServer.close(() => { db.close(); process.exit(0); });
