@@ -18,6 +18,10 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'nexta
 // ── Auth server ──────────────────────────────────────────────
 const AUTH_URL = process.env.AUTH_URL || 'http://nextalk-auth';
 
+// ── LocalTunnel ─────────────────────────────────────────────
+const LOCALTUNNEL_ENABLED   = (process.env.LOCALTUNNEL_ENABLED || '').toLowerCase() === 'true';
+const LOCALTUNNEL_SUBDOMAIN = process.env.LOCALTUNNEL_SUBDOMAIN || '';
+
 module.exports = {
   PORT,
   NODE_ID,
@@ -26,4 +30,6 @@ module.exports = {
   JWT_TTL,
   DB_PATH,
   AUTH_URL,
+  LOCALTUNNEL_ENABLED,
+  LOCALTUNNEL_SUBDOMAIN,
 };
