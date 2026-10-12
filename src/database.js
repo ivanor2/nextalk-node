@@ -62,7 +62,7 @@ migrate();
 
 // ── Prepared Statements ──────────────────────────────────────
 const stmts = {
-  // GET /chats — список чатов юзера
+  // GET /chats — список чатов юзера (включая группы)
   getChats: db.prepare(`
     SELECT
       c.id, c.type, c.name,
@@ -70,34 +70,43 @@ const stmts = {
       (SELECT created_at FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message_time,
       (SELECT sender_id  FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_sender_id,
       cm2.user_id  AS companion_id,
-      cm2.username AS companion_name
+      COALESCE(cm2.username, c.name, 'Чат') AS companion_name
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id AND cm.user_id = ?
-    LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ?
-    WHERE c.type = 'private'
+    LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ? AND c.type = 'private'
+    GROUP BY c.id
     ORDER BY last_message_time DESC
   `),
 
-  // POST /chats — поиск существующего
+  // POST /chats — поиск существующего приватного чата
   findExistingChat: db.prepare(`
     SELECT cm1.chat_id FROM chat_members cm1
     JOIN chat_members cm2 ON cm2.chat_id = cm1.chat_id AND cm2.user_id = ?
+    JOIN chats c ON c.id = cm1.chat_id AND c.type = 'private'
     WHERE cm1.user_id = ?
     LIMIT 1
   `),
 
   // POST /chats — создание
   createChat: db.prepare("INSERT INTO chats (type) VALUES ('private')"),
-  addChatMember: db.prepare('INSERT INTO chat_members (chat_id, user_id, username) VALUES (?, ?, ?)'),
+  createGroupChat: db.prepare("INSERT INTO chats (type, name) VALUES ('group', ?)"),
+  addChatMember: db.prepare('INSERT OR IGNORE INTO chat_members (chat_id, user_id, username) VALUES (?, ?, ?)'),
 
   // GET /chats/:id
   getChatById: db.prepare(`
     SELECT c.id, c.type, c.name,
-           cm2.user_id AS companion_id, cm2.username AS companion_name
+           cm2.user_id AS companion_id,
+           COALESCE(cm2.username, c.name, 'Чат') AS companion_name
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id AND cm.user_id = ?
-    LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ?
+    LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ? AND c.type = 'private'
     WHERE c.id = ?
+    GROUP BY c.id
+  `),
+
+  // Список участников чата
+  getChatMembers: db.prepare(`
+    SELECT user_id, username FROM chat_members WHERE chat_id = ?
   `),
 
   // Проверка доступа к чату
@@ -135,6 +144,29 @@ const transactions = {
       const chatId = result.lastInsertRowid;
       stmts.addChatMember.run(chatId, userId, username);
       stmts.addChatMember.run(chatId, targetUserId, targetUsername || '');
+      db.exec('COMMIT');
+      return chatId;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  },
+
+  createGroup: (creatorId, creatorUsername, groupName, members) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = stmts.createGroupChat.run(groupName);
+      const chatId = result.lastInsertRowid;
+      stmts.addChatMember.run(chatId, creatorId, creatorUsername);
+      if (Array.isArray(members)) {
+        for (const m of members) {
+          const mid = typeof m === 'object' ? m.id : m;
+          const muname = typeof m === 'object' ? (m.username || '') : '';
+          if (mid && mid !== creatorId) {
+            stmts.addChatMember.run(chatId, mid, muname);
+          }
+        }
+      }
       db.exec('COMMIT');
       return chatId;
     } catch (err) {

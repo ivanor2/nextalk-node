@@ -86,12 +86,16 @@ function handleAuth(ws, data, ctx) {
 }
 
 function handleJoin(ws, data, ctx) {
+  if (!ctx.user || !ctx.user.username) return;
   const chatId = String(data.chat_id || '');
   if (!chatId) return;
 
   if (!rooms.has(chatId)) rooms.set(chatId, new Set());
   rooms.get(chatId).add(ctx.user.username);
-  clients.get(ctx.user.username).rooms.add(chatId);
+  const client = clients.get(ctx.user.username);
+  if (client && client.rooms) {
+    client.rooms.add(chatId);
+  }
 
   wsSend(ws, 'joined', { chat_id: chatId });
 
@@ -104,6 +108,7 @@ function handleJoin(ws, data, ctx) {
 }
 
 function handleSend(ws, data, ctx) {
+  if (!ctx.user || !ctx.user.username) return;
   const { chat_id, content, db_message_id } = data;
   if (!chat_id || !content) return;
 
@@ -121,6 +126,7 @@ function handleSend(ws, data, ctx) {
 }
 
 function handleTyping(ws, data, ctx) {
+  if (!ctx.user || !ctx.user.username) return;
   const { chat_id, is_typing } = data;
   const room = rooms.get(String(chat_id));
   if (!room) return;

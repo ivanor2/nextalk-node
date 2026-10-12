@@ -29,6 +29,11 @@ async function handleAPI(req, res, url) {
     return chatsRoutes.getById(req, res, parseInt(chatMatch[1]));
   }
 
+  const chatMembersMatch = pathname.match(/^\/chats\/(\d+)\/members$/);
+  if (method === 'POST' && chatMembersMatch) {
+    return chatsRoutes.addMember(req, res, parseInt(chatMembersMatch[1]));
+  }
+
   // ── Messages ───────────────────────────────────────────────
   if (method === 'GET'  && pathname === '/messages') return messagesRoutes.list(req, res, url);
   if (method === 'POST' && pathname === '/messages') return messagesRoutes.create(req, res);

@@ -37,7 +37,26 @@ module.exports = {
     const p = authMiddleware(req, res);
     if (!p) return;
 
-    const { target_user_id, target_username } = await readBody(req);
+    const body = await readBody(req);
+    const { type, name, members, target_user_id, target_username } = body;
+
+    // Групповой чат
+    if (type === 'group') {
+      const groupName = (name || '').trim();
+      if (!groupName) return jsonErr(res, 'Group name required');
+
+      try {
+        const memberList = Array.isArray(members) ? members : [];
+        const chatId = transactions.createGroup(p.user_id, p.sub, groupName, memberList);
+        log.info(`Group chat created: ${chatId} (${groupName}) by ${p.user_id}`);
+        return jsonOk(res, { chat_id: chatId, created: true, type: 'group', name: groupName }, 201);
+      } catch (e) {
+        log.error('POST /chats (group)', { error: e.message });
+        return jsonErr(res, e.message, 500);
+      }
+    }
+
+    // Приватный чат
     if (!target_user_id) return jsonErr(res, 'target_user_id required');
 
     try {
@@ -70,14 +89,44 @@ module.exports = {
       const chat = stmts.getChatById.get(p.user_id, p.user_id, chatId);
       if (!chat) return jsonErr(res, 'Chat not found or access denied', 404);
 
+      let members = [];
+      try {
+        members = stmts.getChatMembers.all(chatId);
+      } catch (me) {}
+
       return jsonOk(res, {
         chat: {
           ...chat,
+          members,
           companion_online: wsState.clients.has(chat.companion_name),
         },
       });
     } catch (e) {
       log.error('GET /chats/:id', { error: e.message });
+      return jsonErr(res, e.message, 500);
+    }
+  },
+
+  // ── POST /chats/:id/members ────────────────────────────────
+  async addMember(req, res, chatId) {
+    const p = authMiddleware(req, res);
+    if (!p) return;
+
+    try {
+      const access = stmts.checkAccess.get(chatId, p.user_id);
+      if (!access) return jsonErr(res, 'Access denied', 403);
+
+      const body = await readBody(req);
+      const { user_id, username } = body;
+      const targetUserId = parseInt(user_id || '0');
+      if (!targetUserId) return jsonErr(res, 'user_id required', 400);
+
+      stmts.addChatMember.run(chatId, targetUserId, username || '');
+      log.info(`Member ${targetUserId} (${username}) added to chat ${chatId} by ${p.user_id}`);
+
+      return jsonOk(res, { added: true, chat_id: chatId, user_id: targetUserId, username: username || '' });
+    } catch (e) {
+      log.error('POST /chats/:id/members', { error: e.message });
       return jsonErr(res, e.message, 500);
     }
   },

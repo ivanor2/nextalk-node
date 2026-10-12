@@ -55,7 +55,7 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   // API
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith('/api/') || /^\/(auth|chats|messages|users|nodes)/.test(url.pathname)) {
     return handleAPI(req, res, url).catch(e => {
       log.error('Unhandled API error', { error: e.message });
       jsonErr(res, 'Internal server error', 500);
@@ -140,4 +140,8 @@ process.on('SIGINT', () => {
 
 process.on('uncaughtException', err => {
   log.error('Uncaught exception', { error: err.message, stack: err.stack });
+});
+
+process.on('unhandledRejection', reason => {
+  log.error('Unhandled rejection', { reason: reason instanceof Error ? (reason.stack || reason.message) : String(reason) });
 });

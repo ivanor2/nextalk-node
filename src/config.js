@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const path   = require('path');
 
 // ── Сервер ───────────────────────────────────────────────────
-const PORT      = parseInt(process.env.PORT || process.argv[2] || '3001');
+const PORT      = parseInt(process.argv[2] || process.env.PORT || '3001');
 const NODE_ID   = process.env.NODE_ID || crypto.randomBytes(8).toString('hex');
 const NODE_NAME = process.env.NODE_NAME || 'NexTalk Node';
 
