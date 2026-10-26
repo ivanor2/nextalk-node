@@ -31,10 +31,11 @@ function migrate() {
     );
 
     CREATE TABLE IF NOT EXISTS chat_members (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id  INTEGER NOT NULL,
-      user_id  INTEGER NOT NULL,
-      username TEXT    NOT NULL DEFAULT '',
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id              INTEGER NOT NULL,
+      user_id              INTEGER NOT NULL,
+      username             TEXT    NOT NULL DEFAULT '',
+      last_read_message_id INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
       UNIQUE(chat_id, user_id)
     );
@@ -53,7 +54,14 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_chat_members_chat ON chat_members(chat_id);
     CREATE INDEX IF NOT EXISTS idx_messages_chat     ON messages(chat_id);
     CREATE INDEX IF NOT EXISTS idx_messages_chat_id  ON messages(chat_id, id);
+    CREATE INDEX IF NOT EXISTS idx_messages_unread   ON messages(chat_id, sender_id, id);
   `);
+
+  try {
+    db.exec('ALTER TABLE chat_members ADD COLUMN last_read_message_id INTEGER NOT NULL DEFAULT 0');
+  } catch (e) {
+    // Column already exists
+  }
 
   log.info('Database migrated', { path: config.DB_PATH });
 }
@@ -62,15 +70,16 @@ migrate();
 
 // ── Prepared Statements ──────────────────────────────────────
 const stmts = {
-  // GET /chats — список чатов юзера (включая группы)
+  // GET /chats — список чатов юзера (включая группы и unread_count)
   getChats: db.prepare(`
     SELECT
       c.id, c.type, c.name,
       (SELECT content    FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
       (SELECT created_at FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message_time,
       (SELECT sender_id  FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_sender_id,
+      (SELECT COUNT(*)   FROM messages m WHERE m.chat_id = c.id AND m.sender_id != cm.user_id AND m.id > COALESCE(cm.last_read_message_id, 0)) AS unread_count,
       cm2.user_id  AS companion_id,
-      COALESCE(cm2.username, c.name, 'Чат') AS companion_name
+      COALESCE(NULLIF(cm2.username, ''), c.name, 'Чат') AS companion_name
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id AND cm.user_id = ?
     LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ? AND c.type = 'private'
@@ -96,7 +105,7 @@ const stmts = {
   getChatById: db.prepare(`
     SELECT c.id, c.type, c.name,
            cm2.user_id AS companion_id,
-           COALESCE(cm2.username, c.name, 'Чат') AS companion_name
+           COALESCE(NULLIF(cm2.username, ''), c.name, 'Чат') AS companion_name
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id AND cm.user_id = ?
     LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != ? AND c.type = 'private'
@@ -111,6 +120,19 @@ const stmts = {
 
   // Проверка доступа к чату
   checkAccess: db.prepare('SELECT 1 FROM chat_members WHERE chat_id = ? AND user_id = ?'),
+
+  // Отметка о прочтении
+  getMaxMessageId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM messages WHERE chat_id = ?'),
+  updateLastRead: db.prepare(`
+    UPDATE chat_members
+    SET last_read_message_id = MAX(COALESCE(last_read_message_id, 0), ?)
+    WHERE chat_id = ? AND user_id = ?
+  `),
+
+  // Обновление имени пользователя если было пустым
+  updateMemberUsername: db.prepare(`
+    UPDATE chat_members SET username = ? WHERE user_id = ? AND (username IS NULL OR username = '')
+  `),
 
   // GET /messages — начальная загрузка
   getMessages: db.prepare(`

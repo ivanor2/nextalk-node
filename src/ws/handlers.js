@@ -5,17 +5,54 @@ const log       = require('../logger');
 const config    = require('../config');
 const jwt       = require('../jwt');
 const state     = require('./state');
+const { stmts } = require('../database');
 
 const { clients, rooms, pending } = state;
 
 // ── Утилиты ──────────────────────────────────────────────────
 function wsSend(ws, type, payload = {}) {
-  if (ws.readyState === WebSocket.OPEN) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify({ type, ...payload })); } catch (e) {}
   }
 }
 
 function broadcastToRoom(chatId, message, excludeUsername = null) {
+  // Находим всех участников чата из БД
+  let members = [];
+  try {
+    members = stmts.getChatMembers.all(Number(chatId));
+  } catch (e) {}
+
+  if (members && members.length > 0) {
+    members.forEach(m => {
+      if (m.username && m.username === excludeUsername) return;
+      if (message.user_id && m.user_id === message.user_id) return;
+
+      // Ищем клиента по username или user_id
+      let c = m.username ? clients.get(m.username) : null;
+      if (!c) {
+        for (const client of clients.values()) {
+          if (client.user_id === m.user_id) {
+            c = client;
+            break;
+          }
+        }
+      }
+
+      if (c && c.ws && c.ws.readyState === WebSocket.OPEN) {
+        wsSend(c.ws, 'message', message);
+      } else {
+        // Очередь для оффлайн пользователя
+        const queueKey = m.username || String(m.user_id);
+        if (!pending.has(queueKey)) pending.set(queueKey, []);
+        const q = pending.get(queueKey);
+        if (q.length < 200) q.push({ ...message, queued_at: new Date().toISOString() });
+      }
+    });
+    return;
+  }
+
+  // Fallback к rooms Map если чат не найден в базе
   const room = rooms.get(String(chatId));
   if (!room) return;
 
@@ -26,7 +63,6 @@ function broadcastToRoom(chatId, message, excludeUsername = null) {
     if (c?.ws.readyState === WebSocket.OPEN) {
       wsSend(c.ws, 'message', message);
     } else {
-      // Ставим в очередь для оффлайн-юзера
       if (!pending.has(username)) pending.set(username, []);
       const q = pending.get(username);
       if (q.length < 200) q.push({ ...message, queued_at: new Date().toISOString() });
@@ -40,12 +76,23 @@ function broadcastStatus(username, online) {
   });
 }
 
-function deliverPending(username, ws) {
-  const q = pending.get(username);
-  if (!q?.length) return;
-  log.info(`Delivering ${q.length} pending msgs to ${username}`);
-  q.forEach(m => wsSend(ws, 'message', m));
-  pending.delete(username);
+function deliverPending(username, userId, ws) {
+  if (username) {
+    const q1 = pending.get(username);
+    if (q1?.length) {
+      log.info(`Delivering ${q1.length} pending msgs to ${username}`);
+      q1.forEach(m => wsSend(ws, 'message', m));
+      pending.delete(username);
+    }
+  }
+  if (userId) {
+    const q2 = pending.get(String(userId));
+    if (q2?.length) {
+      log.info(`Delivering ${q2.length} pending msgs to user_id ${userId}`);
+      q2.forEach(m => wsSend(ws, 'message', m));
+      pending.delete(String(userId));
+    }
+  }
 }
 
 // ── Обработчики типов сообщений ──────────────────────────────
@@ -72,6 +119,10 @@ function handleAuth(ws, data, ctx) {
   ctx.user = { username, user_id: payload.user_id };
   clients.set(username, { ws, rooms: new Set(), user_id: payload.user_id });
 
+  try {
+    stmts.updateMemberUsername.run(username, payload.user_id);
+  } catch (e) {}
+
   log.info(`WS Auth: ${username}`);
   wsSend(ws, 'auth_ok', {
     node_id: config.NODE_ID,
@@ -82,7 +133,7 @@ function handleAuth(ws, data, ctx) {
   });
 
   broadcastStatus(username, true);
-  deliverPending(username, ws);
+  deliverPending(username, payload.user_id, ws);
 }
 
 function handleJoin(ws, data, ctx) {

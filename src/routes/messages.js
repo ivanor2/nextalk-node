@@ -53,6 +53,11 @@ module.exports = {
       const msgId = result.lastInsertRowid;
       wsState.totalMessages++;
 
+      // Отмечаем прочитанным для автора сообщения
+      try {
+        stmts.updateLastRead.run(Number(msgId), chat_id, p.user_id);
+      } catch (e) {}
+
       log.info(`Message saved: id=${msgId} chat=${chat_id} user=${p.sub}`);
       return jsonOk(res, { id: Number(msgId), timestamp: new Date().toISOString() }, 201);
     } catch (e) {

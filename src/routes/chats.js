@@ -6,9 +6,10 @@ const { stmts, transactions } = require('../database');
 const wsState = require('../ws/state');
 
 /**
- * GET  /chats     — список чатов текущего юзера
- * POST /chats     — создать приватный чат
- * GET  /chats/:id — информация о конкретном чате
+ * GET  /chats          — список чатов текущего юзера
+ * POST /chats          — создать приватный чат
+ * GET  /chats/:id      — информация о конкретном чате
+ * POST /chats/:id/read — отметить чат как прочитанный
  */
 module.exports = {
   // ── GET /chats ────────────────────────────────────────────
@@ -17,15 +18,25 @@ module.exports = {
     if (!p) return;
 
     try {
+      if (p.sub && p.user_id) {
+        try { stmts.updateMemberUsername.run(p.sub, p.user_id); } catch (e) {}
+      }
+
       const chats = stmts.getChats.all(p.user_id, p.user_id);
 
-      const enriched = chats.map(c => ({
-        ...c,
-        companion_online: wsState.clients.has(c.companion_name),
-        last_message_time_fmt: c.last_message_time || null,
-      }));
+      let totalUnread = 0;
+      const enriched = chats.map(c => {
+        const unread = Number(c.unread_count || 0);
+        totalUnread += unread;
+        return {
+          ...c,
+          unread_count: unread,
+          companion_online: wsState.clients.has(c.companion_name),
+          last_message_time_fmt: c.last_message_time || null,
+        };
+      });
 
-      return jsonOk(res, { chats: enriched });
+      return jsonOk(res, { chats: enriched, total_unread: totalUnread });
     } catch (e) {
       log.error('GET /chats', { error: e.message });
       return jsonErr(res, e.message, 500);
@@ -127,6 +138,28 @@ module.exports = {
       return jsonOk(res, { added: true, chat_id: chatId, user_id: targetUserId, username: username || '' });
     } catch (e) {
       log.error('POST /chats/:id/members', { error: e.message });
+      return jsonErr(res, e.message, 500);
+    }
+  },
+
+  // ── POST /chats/:id/read ───────────────────────────────────
+  async markRead(req, res, chatId) {
+    const p = authMiddleware(req, res);
+    if (!p) return;
+
+    try {
+      const access = stmts.checkAccess.get(chatId, p.user_id);
+      if (!access) return jsonErr(res, 'Access denied', 403);
+
+      const maxMsg = stmts.getMaxMessageId.get(chatId);
+      const maxId = maxMsg ? (maxMsg.max_id || 0) : 0;
+
+      stmts.updateLastRead.run(maxId, chatId, p.user_id);
+      log.info(`Chat ${chatId} marked read by ${p.user_id} up to msg ${maxId}`);
+
+      return jsonOk(res, { ok: true, chat_id: chatId, last_read_message_id: maxId });
+    } catch (e) {
+      log.error('POST /chats/:id/read', { error: e.message });
       return jsonErr(res, e.message, 500);
     }
   },
