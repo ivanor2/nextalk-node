@@ -1,3 +1,6 @@
 node_modules/
 .env
 data/
+.node/
+.node_extract_tmp/
+node_temp_download.*

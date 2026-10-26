@@ -14,7 +14,21 @@ function base64urlDecode(str) {
 
 // ── Загрузка публичного ключа ────────────────────────────────
 const publicKeyPath = path.join(__dirname, '..', 'public.pem');
-const publicKey = fs.readFileSync(publicKeyPath, 'utf8');
+let cachedPublicKey = null;
+let lastKeyMtime = 0;
+
+function getPublicKey() {
+  try {
+    const stat = fs.statSync(publicKeyPath);
+    if (!cachedPublicKey || stat.mtimeMs !== lastKeyMtime) {
+      cachedPublicKey = fs.readFileSync(publicKeyPath, 'utf8');
+      lastKeyMtime = stat.mtimeMs;
+    }
+  } catch {
+    if (!cachedPublicKey) cachedPublicKey = fs.readFileSync(publicKeyPath, 'utf8');
+  }
+  return cachedPublicKey;
+}
 
 // ── Верификация JWT (RS256) ──────────────────────────────────
 function verify(token) {
@@ -29,7 +43,7 @@ function verify(token) {
   const verifier = crypto.createVerify('RSA-SHA256');
   verifier.update(`${h}.${p}`);
 
-  const isValid = verifier.verify(publicKey, base64urlDecode(sig));
+  const isValid = verifier.verify(getPublicKey(), base64urlDecode(sig));
   if (!isValid) throw new Error('Invalid signature');
 
   const payload = JSON.parse(base64urlDecode(p).toString('utf8'));

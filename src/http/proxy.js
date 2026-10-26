@@ -13,6 +13,8 @@ const { jsonRes, jsonErr } = require('./helpers');
  * @param {Object|null} bodyObj — тело запроса (для POST)
  */
 async function proxyAuthApi(res, method, path, bodyObj = null) {
+  let response;
+  let rawText = '';
   try {
     const options = {
       method,
@@ -21,11 +23,39 @@ async function proxyAuthApi(res, method, path, bodyObj = null) {
     if (bodyObj) options.body = JSON.stringify(bodyObj);
 
     const url = `${config.AUTH_URL}${path}`;
-    const response = await global.fetch(url, options);
-    const data = await response.json();
+    response = await global.fetch(url, options);
+    rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      const startObj = rawText.indexOf('{');
+      const startArr = rawText.indexOf('[');
+      let jsonStart = -1;
+      if (startObj !== -1 && startArr !== -1) {
+        jsonStart = Math.min(startObj, startArr);
+      } else {
+        jsonStart = startObj !== -1 ? startObj : startArr;
+      }
+
+      if (jsonStart !== -1) {
+        try {
+          data = JSON.parse(rawText.slice(jsonStart));
+        } catch {
+          throw parseErr;
+        }
+      } else {
+        throw parseErr;
+      }
+    }
     jsonRes(res, data, response.status);
   } catch (e) {
-    log.error(`Proxy Auth API failed: ${path}`, { error: e.message });
+    const snippet = rawText ? rawText.slice(0, 300).replace(/\s+/g, ' ').trim() : null;
+    log.error(`Proxy Auth API failed: ${path}`, {
+      error: e.message,
+      status: response ? response.status : undefined,
+      bodySnippet: snippet || undefined,
+    });
     jsonErr(res, 'Auth Server Offline or Error', 502);
   }
 }

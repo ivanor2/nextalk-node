@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js 3001"
+    "dev": "node server.js 3001",
+    "setup:node": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-node.ps1"
   },
   "keywords": [
     "websocket",
