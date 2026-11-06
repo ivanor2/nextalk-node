@@ -18,6 +18,13 @@ module.exports = {
     return proxyAuthApi(res, 'GET', `/users/search?q=${encodeURIComponent(q)}`);
   },
 
+  async getById(req, res, id) {
+    const p = authMiddleware(req, res);
+    if (!p) return;
+
+    return proxyAuthApi(res, 'GET', `/users/${id}`);
+  },
+
   async nodes(req, res) {
     return proxyAuthApi(res, 'GET', '/nodes');
   },

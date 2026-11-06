@@ -167,6 +167,7 @@ function handleSend(ws, data, ctx) {
     id:        db_message_id || `ws-${Date.now()}`,
     chat_id:   String(chat_id),
     sender:    ctx.user.username,
+    sender_id: ctx.user.user_id,
     user_id:   ctx.user.user_id,
     content,
     timestamp: new Date().toISOString(),

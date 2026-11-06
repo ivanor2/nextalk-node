@@ -45,6 +45,8 @@ async function handleAPI(req, res, url) {
 
   // ── Users (proxy → nextalk-auth) ──────────────────────────
   if (method === 'GET' && pathname === '/users/search') return usersRoutes.search(req, res, url);
+  const userMatch = pathname.match(/^\/users\/(\d+)$/);
+  if (method === 'GET' && userMatch) return usersRoutes.getById(req, res, parseInt(userMatch[1]));
   if (method === 'GET' && pathname === '/nodes')        return usersRoutes.nodes(req, res);
 
   // ── 404 ────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 const log = require('../logger');
 const { jsonOk, jsonErr, readBody, authMiddleware } = require('../http/helpers');
 const { stmts } = require('../database');
-const wsState   = require('../ws/state');
+const wsState = require('../ws/state');
 
 /**
  * GET  /messages?chat_id=X&last_id=Y&limit=N — история сообщений
@@ -17,7 +17,7 @@ module.exports = {
 
     const chatId = parseInt(url.searchParams.get('chat_id') || '0');
     const lastId = parseInt(url.searchParams.get('last_id') || '0');
-    const limit  = Math.min(parseInt(url.searchParams.get('limit') || '100'), 200);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 200);
 
     if (!chatId) return jsonErr(res, 'chat_id required');
 
@@ -43,7 +43,7 @@ module.exports = {
 
     const { chat_id, content } = await readBody(req);
     if (!chat_id || !content) return jsonErr(res, 'chat_id and content required');
-    if (content.length > 4000) return jsonErr(res, 'Message too long');
+    if (content.length > 20000) return jsonErr(res, 'Message too long');
 
     try {
       const access = stmts.checkAccess.get(chat_id, p.user_id);
@@ -56,7 +56,7 @@ module.exports = {
       // Отмечаем прочитанным для автора сообщения
       try {
         stmts.updateLastRead.run(Number(msgId), chat_id, p.user_id);
-      } catch (e) {}
+      } catch (e) { }
 
       log.info(`Message saved: id=${msgId} chat=${chat_id} user=${p.sub}`);
       return jsonOk(res, { id: Number(msgId), timestamp: new Date().toISOString() }, 201);
