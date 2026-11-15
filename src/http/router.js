@@ -1,7 +1,8 @@
 'use strict';
 
 const log      = require('../logger');
-const { jsonErr } = require('./helpers');
+const { jsonErr, readBody } = require('./helpers');
+const interNode = require('../interNode');
 
 const authRoutes     = require('../routes/auth');
 const chatsRoutes    = require('../routes/chats');
@@ -43,11 +44,20 @@ async function handleAPI(req, res, url) {
   if (method === 'GET'  && pathname === '/messages') return messagesRoutes.list(req, res, url);
   if (method === 'POST' && pathname === '/messages') return messagesRoutes.create(req, res);
 
+  // ── Inter-Node ─────────────────────────────────────────────
+  if (method === 'POST' && (pathname === '/inter-node/message' || pathname === '/node/message')) {
+    const body = await readBody(req);
+    return interNode.handleIncoming(req, res, body);
+  }
+
   // ── Users (proxy → nextalk-auth) ──────────────────────────
   if (method === 'GET' && pathname === '/users/search') return usersRoutes.search(req, res, url);
   const userMatch = pathname.match(/^\/users\/(\d+)$/);
   if (method === 'GET' && userMatch) return usersRoutes.getById(req, res, parseInt(userMatch[1]));
   if (method === 'GET' && pathname === '/nodes')        return usersRoutes.nodes(req, res);
+  if (method === 'GET' && (pathname === '/user-nodes' || pathname === '/nodes/user-nodes')) {
+    return usersRoutes.userNodes(req, res, url);
+  }
 
   // ── 404 ────────────────────────────────────────────────────
   jsonErr(res, `Not found: ${method} /api${pathname}`, 404);

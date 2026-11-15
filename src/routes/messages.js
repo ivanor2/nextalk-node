@@ -4,6 +4,7 @@ const log = require('../logger');
 const { jsonOk, jsonErr, readBody, authMiddleware } = require('../http/helpers');
 const { stmts } = require('../database');
 const wsState = require('../ws/state');
+const interNode = require('../interNode');
 
 /**
  * GET  /messages?chat_id=X&last_id=Y&limit=N — история сообщений
@@ -59,7 +60,19 @@ module.exports = {
       } catch (e) { }
 
       log.info(`Message saved: id=${msgId} chat=${chat_id} user=${p.sub}`);
-      return jsonOk(res, { id: Number(msgId), timestamp: new Date().toISOString() }, 201);
+
+      // Межузловая доставка сообщения
+      const timestamp = new Date().toISOString();
+      interNode.relayMessage(chat_id, {
+        id: Number(msgId),
+        chat_id,
+        sender_id: p.user_id,
+        username: p.sub || '',
+        content,
+        timestamp,
+      }, p.user_id);
+
+      return jsonOk(res, { id: Number(msgId), timestamp }, 201);
     } catch (e) {
       log.error('POST /messages', { error: e.message });
       return jsonErr(res, e.message, 500);

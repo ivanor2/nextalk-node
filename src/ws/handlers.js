@@ -6,6 +6,7 @@ const config    = require('../config');
 const jwt       = require('../jwt');
 const state     = require('./state');
 const { stmts } = require('../database');
+const interNode = require('../interNode');
 
 const { clients, rooms, pending } = state;
 
@@ -134,6 +135,7 @@ function handleAuth(ws, data, ctx) {
 
   broadcastStatus(username, true);
   deliverPending(username, payload.user_id, ws);
+  interNode.bindUser(payload.user_id, username);
 }
 
 function handleJoin(ws, data, ctx) {
@@ -175,6 +177,7 @@ function handleSend(ws, data, ctx) {
 
   wsSend(ws, 'sent', { id: message.id, chat_id: String(chat_id) });
   broadcastToRoom(chat_id, message, ctx.user.username);
+  interNode.relayMessage(chat_id, message, ctx.user.user_id);
 }
 
 function handleTyping(ws, data, ctx) {
@@ -214,6 +217,7 @@ function handleDisconnect(ctx) {
   }
   log.info(`WS Disconnect: ${ctx.user.username}`);
   broadcastStatus(ctx.user.username, false);
+  interNode.unbindUser(ctx.user.user_id);
 }
 
 module.exports = {

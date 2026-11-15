@@ -23,6 +23,7 @@ const { setCors, jsonOk, jsonErr } = require('./src/http/helpers');
 const { handleAPI } = require('./src/http/router');
 const { createWSS } = require('./src/ws');
 const wsState = require('./src/ws/state');
+const interNode = require('./src/interNode');
 
   // ── HTTP/HTTPS Request Handler ─────────────────────────────────
   const requestListener = async (req, res) => {
@@ -61,7 +62,7 @@ const wsState = require('./src/ws/state');
     }
 
     // API
-    if (url.pathname.startsWith('/api/') || /^\/(auth|chats|messages|users|nodes)/.test(url.pathname)) {
+    if (url.pathname.startsWith('/api/') || /^\/(auth|chats|messages|users|nodes|inter-node|user-nodes)/.test(url.pathname)) {
       return handleAPI(req, res, url).catch(e => {
         log.error('Unhandled API error', { error: e.message });
         jsonErr(res, 'Internal server error', 500);
@@ -184,6 +185,9 @@ async function startTunnel() {
 ╚═══════════════════════════════════════════════════╝
 `);
     log.info(`Server started on port ${config.PORT}`, { tls: Boolean(httpsServer) });
+
+    // Initialize Inter-Node coordination
+    interNode.init();
 
     // Start LocalTunnel if enabled
     startTunnel();

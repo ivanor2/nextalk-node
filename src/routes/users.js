@@ -28,4 +28,9 @@ module.exports = {
   async nodes(req, res) {
     return proxyAuthApi(res, 'GET', '/nodes');
   },
+
+  async userNodes(req, res, url) {
+    const qs = url.search || '';
+    return proxyAuthApi(res, 'GET', `/user-nodes${qs}`);
+  },
 };

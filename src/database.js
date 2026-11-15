@@ -153,6 +153,14 @@ const stmts = {
     'INSERT INTO messages (chat_id, sender_id, username, content) VALUES (?, ?, ?, ?)'
   ),
 
+  // Межузловые запросы (Inter-Node)
+  getChatRaw: db.prepare('SELECT id, type, name, created_at FROM chats WHERE id = ?'),
+  ensureChat: db.prepare("INSERT OR IGNORE INTO chats (id, type, name, created_at) VALUES (?, ?, ?, COALESCE(?, datetime('now')))"),
+  ensureChatMember: db.prepare('INSERT OR IGNORE INTO chat_members (chat_id, user_id, username) VALUES (?, ?, ?)'),
+  findMessageByDetails: db.prepare('SELECT id FROM messages WHERE chat_id = ? AND sender_id = ? AND content = ? LIMIT 1'),
+  insertRemoteMessageWithId: db.prepare('INSERT OR IGNORE INTO messages (id, chat_id, sender_id, username, content, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+  insertRemoteMessage: db.prepare('INSERT INTO messages (chat_id, sender_id, username, content, created_at) VALUES (?, ?, ?, ?, ?)'),
+
   // Health check
   healthCheck: db.prepare('SELECT 1'),
 };
