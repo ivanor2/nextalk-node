@@ -8,6 +8,8 @@ const authRoutes     = require('../routes/auth');
 const chatsRoutes    = require('../routes/chats');
 const messagesRoutes = require('../routes/messages');
 const usersRoutes    = require('../routes/users');
+const wsHandlers     = require('../ws/handlers');
+const { jsonOk }     = require('./helpers');
 
 /**
  * Маршрутизатор HTTP API.
@@ -51,6 +53,11 @@ async function handleAPI(req, res, url) {
   }
 
   // ── Users (proxy → nextalk-auth) ──────────────────────────
+  if (method === 'POST' && pathname === '/users/kick') {
+    const body = await readBody(req);
+    wsHandlers.kickUser(body.username || body.user_id, body.reason || 'Аккаунт заблокирован');
+    return jsonOk(res, { kicked: true });
+  }
   if (method === 'GET' && pathname === '/users/search') return usersRoutes.search(req, res, url);
   const userMatch = pathname.match(/^\/users\/(\d+)$/);
   if (method === 'GET' && userMatch) return usersRoutes.getById(req, res, parseInt(userMatch[1]));

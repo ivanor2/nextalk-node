@@ -1,10 +1,10 @@
 'use strict';
 
 const WebSocket = require('ws');
-const log       = require('../logger');
-const config    = require('../config');
-const jwt       = require('../jwt');
-const state     = require('./state');
+const log = require('../logger');
+const config = require('../config');
+const jwt = require('../jwt');
+const state = require('./state');
 const { stmts } = require('../database');
 const interNode = require('../interNode');
 
@@ -13,7 +13,7 @@ const { clients, rooms, pending } = state;
 // ── Утилиты ──────────────────────────────────────────────────
 function wsSend(ws, type, payload = {}) {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    try { ws.send(JSON.stringify({ type, ...payload })); } catch (e) {}
+    try { ws.send(JSON.stringify({ type, ...payload })); } catch (e) { }
   }
 }
 
@@ -22,7 +22,7 @@ function broadcastToRoom(chatId, message, excludeUsername = null) {
   let members = [];
   try {
     members = stmts.getChatMembers.all(Number(chatId));
-  } catch (e) {}
+  } catch (e) { }
 
   if (members && members.length > 0) {
     members.forEach(m => {
@@ -98,137 +98,165 @@ function deliverPending(username, userId, ws) {
 
 // ── Обработчики типов сообщений ──────────────────────────────
 
-function handleAuth(ws, data, ctx) {
-  let payload;
-  try { payload = jwt.verify(data.token); }
-  catch (e) {
-    wsSend(ws, 'auth_error', { message: e.message });
-    ws.close(4003, e.message);
-    return;
-  }
-
-  clearTimeout(ctx.authTimeout);
-  const username = payload.sub;
-
-  // Вытесняем старое соединение
-  if (clients.has(username)) {
-    const old = clients.get(username);
-    wsSend(old.ws, 'kicked', { message: 'Connected from another device' });
-    old.ws.close(4005);
-  }
-
-  ctx.user = { username, user_id: payload.user_id };
-  clients.set(username, { ws, rooms: new Set(), user_id: payload.user_id });
-
-  try {
-    stmts.updateMemberUsername.run(username, payload.user_id);
-  } catch (e) {}
-
-  log.info(`WS Auth: ${username}`);
-  wsSend(ws, 'auth_ok', {
-    node_id: config.NODE_ID,
-    node_name: config.NODE_NAME,
-    username,
-    user_id: payload.user_id,
-    server_time: new Date().toISOString(),
-  });
-
-  broadcastStatus(username, true);
-  deliverPending(username, payload.user_id, ws);
-  interNode.bindUser(payload.user_id, username);
-}
-
-function handleJoin(ws, data, ctx) {
-  if (!ctx.user || !ctx.user.username) return;
-  const chatId = String(data.chat_id || '');
-  if (!chatId) return;
-
-  if (!rooms.has(chatId)) rooms.set(chatId, new Set());
-  rooms.get(chatId).add(ctx.user.username);
-  const client = clients.get(ctx.user.username);
-  if (client && client.rooms) {
-    client.rooms.add(chatId);
-  }
-
-  wsSend(ws, 'joined', { chat_id: chatId });
-
-  // Статусы онлайн участников комнаты
-  rooms.get(chatId).forEach(u => {
-    if (u !== ctx.user.username) {
-      wsSend(ws, 'user_status', { username: u, online: true });
+  async function handleAuth(ws, data, ctx) {
+    let payload;
+    try { payload = jwt.verify(data.token); }
+    catch (e) {
+      wsSend(ws, 'auth_error', { message: e.message });
+      ws.close(4003, e.message);
+      return;
     }
-  });
-}
 
-function handleSend(ws, data, ctx) {
-  if (!ctx.user || !ctx.user.username) return;
-  const { chat_id, content, db_message_id } = data;
-  if (!chat_id || !content) return;
+    // Проверяем актуальный статус аккаунта на auth-сервере
+    try {
+      const authCheck = await fetch(`${config.AUTH_URL}/profile`, {
+        headers: { 'Authorization': `Bearer ${data.token}` }
+      });
+      if (authCheck.status === 403) {
+        const errData = await authCheck.json().catch(() => ({}));
+        const msg = errData.error || 'Аккаунт заблокирован';
+        wsSend(ws, 'auth_error', { message: msg });
+        ws.close(4003, msg);
+        return;
+      }
+    } catch (e) {
+      // Если auth-сервер временно недоступен, продолжаем по валидному JWT
+    }
 
-  const message = {
-    id:        db_message_id || `ws-${Date.now()}`,
-    chat_id:   String(chat_id),
-    sender:    ctx.user.username,
-    sender_id: ctx.user.user_id,
-    user_id:   ctx.user.user_id,
-    content,
-    timestamp: new Date().toISOString(),
-  };
+    clearTimeout(ctx.authTimeout);
+    const username = payload.sub;
 
-  wsSend(ws, 'sent', { id: message.id, chat_id: String(chat_id) });
-  broadcastToRoom(chat_id, message, ctx.user.username);
-  interNode.relayMessage(chat_id, message, ctx.user.user_id);
-}
+    // Вытесняем старое соединение
+    if (clients.has(username)) {
+      const old = clients.get(username);
+      wsSend(old.ws, 'kicked', { message: 'Connected from another device' });
+      old.ws.close(4005);
+    }
 
-function handleTyping(ws, data, ctx) {
-  if (!ctx.user || !ctx.user.username) return;
-  const { chat_id, is_typing } = data;
-  const room = rooms.get(String(chat_id));
-  if (!room) return;
+    ctx.user = { username, user_id: payload.user_id };
+    clients.set(username, { ws, rooms: new Set(), user_id: payload.user_id });
 
-  room.forEach(u => {
-    if (u !== ctx.user.username) {
-      const peer = clients.get(u);
-      if (peer?.ws.readyState === WebSocket.OPEN) {
-        wsSend(peer.ws, 'typing', {
-          chat_id: String(chat_id),
-          username: ctx.user.username,
-          is_typing: !!is_typing,
-        });
+    try {
+      stmts.updateMemberUsername.run(username, payload.user_id);
+    } catch (e) { }
+
+    log.info(`WS Auth: ${username}`);
+    wsSend(ws, 'auth_ok', {
+      node_id: config.NODE_ID,
+      node_name: config.NODE_NAME,
+      username,
+      user_id: payload.user_id,
+      server_time: new Date().toISOString(),
+    });
+
+    broadcastStatus(username, true);
+    deliverPending(username, payload.user_id, ws);
+    interNode.bindUser(payload.user_id, username);
+  }
+
+  function handleJoin(ws, data, ctx) {
+    if (!ctx.user || !ctx.user.username) return;
+    const chatId = String(data.chat_id || '');
+    if (!chatId) return;
+
+    if (!rooms.has(chatId)) rooms.set(chatId, new Set());
+    rooms.get(chatId).add(ctx.user.username);
+    const client = clients.get(ctx.user.username);
+    if (client && client.rooms) {
+      client.rooms.add(chatId);
+    }
+
+    wsSend(ws, 'joined', { chat_id: chatId });
+
+    // Статусы онлайн участников комнаты
+    rooms.get(chatId).forEach(u => {
+      if (u !== ctx.user.username) {
+        wsSend(ws, 'user_status', { username: u, online: true });
+      }
+    });
+  }
+
+  function handleSend(ws, data, ctx) {
+    if (!ctx.user || !ctx.user.username) return;
+    const { chat_id, content, db_message_id } = data;
+    if (!chat_id || !content) return;
+
+    const message = {
+      id: db_message_id || `ws-${Date.now()}`,
+      chat_id: String(chat_id),
+      sender: ctx.user.username,
+      sender_id: ctx.user.user_id,
+      user_id: ctx.user.user_id,
+      content,
+      timestamp: new Date().toISOString(),
+    };
+
+    wsSend(ws, 'sent', { id: message.id, chat_id: String(chat_id) });
+    broadcastToRoom(chat_id, message, ctx.user.username);
+    interNode.relayMessage(chat_id, message, ctx.user.user_id);
+  }
+
+  function handleTyping(ws, data, ctx) {
+    if (!ctx.user || !ctx.user.username) return;
+    const { chat_id, is_typing } = data;
+    const room = rooms.get(String(chat_id));
+    if (!room) return;
+
+    room.forEach(u => {
+      if (u !== ctx.user.username) {
+        const peer = clients.get(u);
+        if (peer?.ws.readyState === WebSocket.OPEN) {
+          wsSend(peer.ws, 'typing', {
+            chat_id: String(chat_id),
+            username: ctx.user.username,
+            is_typing: !!is_typing,
+          });
+        }
+      }
+    });
+  }
+
+  function handlePing(ws) {
+    wsSend(ws, 'pong', { server_time: new Date().toISOString() });
+  }
+
+  // ── Обработка закрытия ───────────────────────────────────────
+  function handleDisconnect(ctx) {
+    if (!ctx.user) return;
+    const c = clients.get(ctx.user.username);
+    if (c) {
+      c.rooms.forEach(chatId => {
+        rooms.get(chatId)?.delete(ctx.user.username);
+        if (!rooms.get(chatId)?.size) rooms.delete(chatId);
+      });
+      clients.delete(ctx.user.username);
+    }
+    log.info(`WS Disconnect: ${ctx.user.username}`);
+    broadcastStatus(ctx.user.username, false);
+    interNode.unbindUser(ctx.user.user_id);
+  }
+
+  function kickUser(userIdOrUsername, reason = 'Аккаунт заблокирован') {
+    for (const [uname, client] of clients.entries()) {
+      if (uname === userIdOrUsername || client.user_id === Number(userIdOrUsername)) {
+        wsSend(client.ws, 'kicked', { message: reason });
+        try { client.ws.close(4003, reason); } catch (e) { }
+        clients.delete(uname);
+        log.info(`Kicked user ${uname} (${reason})`);
       }
     }
-  });
-}
-
-function handlePing(ws) {
-  wsSend(ws, 'pong', { server_time: new Date().toISOString() });
-}
-
-// ── Обработка закрытия ───────────────────────────────────────
-function handleDisconnect(ctx) {
-  if (!ctx.user) return;
-  const c = clients.get(ctx.user.username);
-  if (c) {
-    c.rooms.forEach(chatId => {
-      rooms.get(chatId)?.delete(ctx.user.username);
-      if (!rooms.get(chatId)?.size) rooms.delete(chatId);
-    });
-    clients.delete(ctx.user.username);
   }
-  log.info(`WS Disconnect: ${ctx.user.username}`);
-  broadcastStatus(ctx.user.username, false);
-  interNode.unbindUser(ctx.user.user_id);
-}
 
-module.exports = {
-  wsSend,
-  broadcastToRoom,
-  broadcastStatus,
-  deliverPending,
-  handleAuth,
-  handleJoin,
-  handleSend,
-  handleTyping,
-  handlePing,
-  handleDisconnect,
-};
+  module.exports = {
+    wsSend,
+    broadcastToRoom,
+    broadcastStatus,
+    deliverPending,
+    handleAuth,
+    handleJoin,
+    handleSend,
+    handleTyping,
+    handlePing,
+    handleDisconnect,
+    kickUser,
+  };
