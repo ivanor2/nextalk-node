@@ -159,6 +159,16 @@ function deliverPending(username, userId, ws) {
     const chatId = String(data.chat_id || '');
     if (!chatId) return;
 
+    // Авторизация: проверка членства в чате
+    try {
+      const access = stmts.checkAccess.get(Number(chatId), ctx.user.user_id);
+      if (!access) {
+        return wsSend(ws, 'error', { message: 'Access denied: not a member of this chat' });
+      }
+    } catch (e) {
+      return wsSend(ws, 'error', { message: 'Database error' });
+    }
+
     if (!rooms.has(chatId)) rooms.set(chatId, new Set());
     rooms.get(chatId).add(ctx.user.username);
     const client = clients.get(ctx.user.username);
@@ -181,6 +191,16 @@ function deliverPending(username, userId, ws) {
     const { chat_id, content, db_message_id } = data;
     if (!chat_id || !content) return;
 
+    // Авторизация: проверка членства в чате
+    try {
+      const access = stmts.checkAccess.get(Number(chat_id), ctx.user.user_id);
+      if (!access) {
+        return wsSend(ws, 'error', { message: 'Access denied: cannot send message to this chat' });
+      }
+    } catch (e) {
+      return wsSend(ws, 'error', { message: 'Database error' });
+    }
+
     const message = {
       id: db_message_id || `ws-${Date.now()}`,
       chat_id: String(chat_id),
@@ -199,6 +219,13 @@ function deliverPending(username, userId, ws) {
   function handleTyping(ws, data, ctx) {
     if (!ctx.user || !ctx.user.username) return;
     const { chat_id, is_typing } = data;
+    if (!chat_id) return;
+
+    try {
+      const access = stmts.checkAccess.get(Number(chat_id), ctx.user.user_id);
+      if (!access) return;
+    } catch (e) { return; }
+
     const room = rooms.get(String(chat_id));
     if (!room) return;
 

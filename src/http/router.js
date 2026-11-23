@@ -1,5 +1,6 @@
 'use strict';
 
+const config   = require('../config');
 const log      = require('../logger');
 const { jsonErr, readBody } = require('./helpers');
 const interNode = require('../interNode');
@@ -54,6 +55,10 @@ async function handleAPI(req, res, url) {
 
   // ── Users (proxy → nextalk-auth) ──────────────────────────
   if (method === 'POST' && pathname === '/users/kick') {
+    const secret = req.headers['x-inter-node-secret'] || req.headers['x-node-secret'];
+    if (config.INTER_NODE_SECRET && secret !== config.INTER_NODE_SECRET) {
+      return jsonErr(res, 'Unauthorized', 401);
+    }
     const body = await readBody(req);
     wsHandlers.kickUser(body.username || body.user_id, body.reason || 'Аккаунт заблокирован');
     return jsonOk(res, { kicked: true });

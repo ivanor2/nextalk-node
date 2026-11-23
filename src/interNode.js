@@ -273,6 +273,15 @@ const interNode = {
    * Обработка входящего межузлового сообщения (POST /api/inter-node/message)
    */
   handleIncoming(req, res, body) {
+    // Валидация межсерверного секрета (защита от несанкционированного внедрения сообщений)
+    const secret = req.headers['x-inter-node-secret'] || req.headers['x-node-secret'];
+    if (config.INTER_NODE_SECRET && secret !== config.INTER_NODE_SECRET) {
+      log.warn('[InterNode] Rejected unauthorized incoming message: invalid or missing secret');
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized: invalid inter-node secret' }));
+      return;
+    }
+
     if (!body || !body.chat || !body.message) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Invalid inter-node payload' }));
