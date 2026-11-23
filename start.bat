@@ -54,6 +54,31 @@ if /i "%~1"=="--setup-node" (
     shift
     goto parse_args
 )
+if /i "%~1"=="--docker" (
+    set "ACTION_DOCKER=1"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--docker-cluster" (
+    set "ACTION_DOCKER=2"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--docker-dev" (
+    set "ACTION_DOCKER=3"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--docker-down" (
+    set "ACTION_DOCKER=4"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--docker-logs" (
+    set "ACTION_DOCKER=5"
+    shift
+    goto parse_args
+)
 :: Если аргумент не ключ, считаем его портом
 set "PORT=%~1"
 shift
@@ -72,6 +97,35 @@ if "%ACTION_DOWNLOAD_ONLY%"=="1" (
     echo  [DONE] Локальный Node.js успешно скачан.
     pause
     exit /b 0
+)
+
+if "%ACTION_DOCKER%"=="1" (
+    call "%~dp0docker-start.bat"
+    exit /b %errorlevel%
+)
+if "%ACTION_DOCKER%"=="2" (
+    echo  [DOCKER] Запуск кластера узлов (Node 1 + Node 2)...
+    docker compose --profile cluster up -d --build
+    echo.
+    echo  [OK] Кластер запущен:
+    echo   - Node 1: http://localhost:3001/health
+    echo   - Node 2: http://localhost:3002/health
+    pause
+    exit /b %errorlevel%
+)
+if "%ACTION_DOCKER%"=="3" (
+    echo  [DOCKER] Запуск режима разработки (Watch mode)...
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+    exit /b %errorlevel%
+)
+if "%ACTION_DOCKER%"=="4" (
+    echo  [DOCKER] Остановка Docker контейнеров...
+    docker compose down
+    exit /b %errorlevel%
+)
+if "%ACTION_DOCKER%"=="5" (
+    docker compose logs -f
+    exit /b %errorlevel%
 )
 
 :: Нормализуем флаг локального режима

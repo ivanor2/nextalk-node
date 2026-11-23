@@ -12,6 +12,7 @@
 - [Технологический стек](#-технологический-стек)
 - [Требования к окружению](#-требования-к-окружению)
 - [Быстрый старт и запуск](#-быстрый-старт-и-запуск)
+  - [Запуск через Docker и Docker Compose (Рекомендуется)](#-запуск-через-docker-и-docker-compose-рекомендуется)
   - [Режим Zero-Install (Портативный Node.js)](#режим-zero-install-портативный-nodejs)
   - [Стандартный запуск через системный Node.js](#стандартный-запуск-через-системный-nodejs)
   - [Запуск нескольких узлов на одной машине](#запуск-нескольких-узлов-на-одной-машине)
@@ -77,6 +78,7 @@ flowchart LR
 ## 🛠 Технологический стек
 
 - **Среда выполнения**: Node.js v20.10+ / v22+ (требуется поддержка `node:sqlite`)
+- **Контейнеризация**: Docker, Docker Compose (Alpine Linux, Node 22, su-exec, healthchecks)
 - **WebSocket**: Библиотека `ws` (v8.18+)
 - **База данных**: Встроенный модуль `node:sqlite` (SQLite 3 с WAL-журналированием)
 - **Конфигурация**: `dotenv`
@@ -86,13 +88,93 @@ flowchart LR
 
 ## 📋 Требования к окружению
 
-- **ОС**: Windows 10/11 / Windows Server / Linux / macOS.
-- **Node.js**: Версия 20.10+ или 22+ (если используется системный Node.js).
+- **Docker**: Docker Desktop / Docker Engine + Docker Compose v2+ (рекомендуемый способ).
+- Либо **Node.js**: Версия 20.10+ или 22+ (если используется системный Node.js).
 - Либо **PowerShell 5.1+** (для автоматической загрузки портативного Node.js на Windows).
 
 ---
 
 ## 🚀 Быстрый старт и запуск
+
+### 🐳 Запуск через Docker и Docker Compose (Рекомендуется)
+
+Самый быстрый, чистый и изолированный способ запуска узла. Все зависимости и Node.js 22 упакованы в легковесный образ на базе Alpine Linux. База данных SQLite сохраняется на хост-машине в папке `data/`.
+
+#### Вариант A. Быстрый запуск через готовые скрипты:
+
+- **Windows**:
+  ```cmd
+  docker-start.bat
+  :: или через общий скрипт запуска:
+  start.bat --docker
+  ```
+- **Linux / macOS**:
+  ```bash
+  bash docker-start.sh
+  # или
+  ./start.sh --docker
+  ```
+
+#### Вариант B. Запуск через Docker Compose или npm:
+
+```bash
+# 1. Запуск в фоновом режиме со сборкой:
+docker compose up -d --build
+# или
+npm run docker:up
+
+# 2. Просмотр логов:
+docker compose logs -f
+# или
+npm run docker:logs
+
+# 3. Остановка узла:
+docker compose down
+# или
+npm run docker:down
+```
+
+После старта узел доступен по адресам:
+- **HTTP / Health**: `http://localhost:3001/health`
+- **WebSocket**: `ws://localhost:3001`
+- **База данных**: файл `data/nextalk.db` монтируется с хоста и сохраняется между перезапусками.
+
+#### 👥 Запуск кластера для тестирования федерации (Node 1 + Node 2)
+
+Для проверки межузлового обмена сообщениями можно одной командой запустить сразу два узла в единой виртуальной сети:
+
+```bash
+docker compose --profile cluster up -d --build
+# или
+npm run docker:cluster
+# или на Windows:
+start.bat --docker-cluster
+```
+
+- **Узел 1**: порт `3001` (БД: `data/nextalk.db`)
+- **Узел 2**: порт `3002` (БД: `data/node2/nextalk-3002.db`)
+
+#### 🛠 Режим разработки с горячей перезагрузкой (Hot-Reload / Watch mode)
+
+Для разработки с мгновенным применением правок без пересборки контейнера:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# или
+npm run docker:dev
+# или на Windows:
+start.bat --docker-dev
+```
+
+#### 🔗 Интеграция с центром авторизации OSPanel (nextalk-auth)
+
+В `docker-compose.yml` включена поддержка `extra_hosts: ["host.docker.internal:host-gateway"]`.
+Если `nextalk-auth` работает в локальном OpenServer Panel на Windows, в `.env` достаточно указать:
+```ini
+AUTH_URL="http://host.docker.internal/nextalk-auth"
+```
+
+---
 
 ### Режим Zero-Install (Портативный Node.js)
 

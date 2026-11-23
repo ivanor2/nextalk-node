@@ -1,0 +1,80 @@
+# ==============================================================================
+# Docker Compose — NexTalk WebSocket Node Infrastructure
+# ==============================================================================
+
+services:
+  # Основной серверный узел (по умолчанию порт 3001)
+  nextalk-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nextalk-node:latest
+    container_name: nextalk-node
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - NODE_NAME=${NODE_NAME:-NexTalk Primary Node}
+      - JWT_ISSUER=${JWT_ISSUER:-nextalk-auth}
+      - JWT_TTL=${JWT_TTL:-604800}
+      - DB_PATH=/app/data/nextalk.db
+      - AUTH_URL=${AUTH_URL:-http://host.docker.internal/nextalk-auth}
+      - LOCALTUNNEL_ENABLED=${LOCALTUNNEL_ENABLED:-false}
+      - LOCALTUNNEL_SUBDOMAIN=${LOCALTUNNEL_SUBDOMAIN:-}
+    volumes:
+      - ./data:/app/data
+      - ./public.pem:/app/public.pem:ro
+    extra_hosts:
+      # Доступ к хост-машине (OSPanel / nextalk-auth) изнутри контейнера
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - nextalk-network
+
+  # Второй узел сети для проверки межузловой федерации (Inter-Node Relay)
+  # Запуск: docker compose --profile cluster up -d
+  nextalk-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nextalk-node:latest
+    container_name: nextalk-node-2
+    restart: unless-stopped
+    profiles:
+      - cluster
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - NODE_NAME=${NODE_NAME_2:-NexTalk Peer Node (3002)}
+      - JWT_ISSUER=${JWT_ISSUER:-nextalk-auth}
+      - JWT_TTL=${JWT_TTL:-604800}
+      - DB_PATH=/app/data/nextalk-3002.db
+      - AUTH_URL=${AUTH_URL:-http://host.docker.internal/nextalk-auth}
+      - LOCALTUNNEL_ENABLED=false
+    volumes:
+      - ./data/node2:/app/data
+      - ./public.pem:/app/public.pem:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - nextalk-network
+
+networks:
+  nextalk-network:
+    name: nextalk-network
+    driver: bridge

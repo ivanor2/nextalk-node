@@ -46,6 +46,26 @@ while [ "$#" -gt 0 ]; do
             ACTION_DOWNLOAD_ONLY=1
             shift
             ;;
+        --docker)
+            ACTION_DOCKER=1
+            shift
+            ;;
+        --docker-cluster)
+            ACTION_DOCKER=2
+            shift
+            ;;
+        --docker-dev)
+            ACTION_DOCKER=3
+            shift
+            ;;
+        --docker-down)
+            ACTION_DOCKER=4
+            shift
+            ;;
+        --docker-logs)
+            ACTION_DOCKER=5
+            shift
+            ;;
         *)
             PORT="$1"
             shift
@@ -57,6 +77,29 @@ if [ "$ACTION_DOWNLOAD_ONLY" -eq 1 ]; then
     echo " [ACTION] Принудительная загрузка локального Node.js..."
     bash scripts/setup-local-node.sh --force --target-dir "$LOCAL_NODE_DIR" --version "$NODE_VERSION"
     exit 0
+fi
+
+if [ "$ACTION_DOCKER" = "1" ]; then
+    bash docker-start.sh
+    exit $?
+fi
+if [ "$ACTION_DOCKER" = "2" ]; then
+    echo " [DOCKER] Запуск кластера узлов (Node 1 + Node 2)..."
+    docker compose --profile cluster up -d --build
+    exit $?
+fi
+if [ "$ACTION_DOCKER" = "3" ]; then
+    echo " [DOCKER] Запуск режима разработки (Watch mode)..."
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+    exit $?
+fi
+if [ "$ACTION_DOCKER" = "4" ]; then
+    docker compose down
+    exit $?
+fi
+if [ "$ACTION_DOCKER" = "5" ]; then
+    docker compose logs -f
+    exit $?
 fi
 
 if [ "$USE_LOCAL_NODE" = "true" ] || [ "$USE_LOCAL_NODE" = "1" ] || [ "$USE_LOCAL_NODE" = "yes" ]; then

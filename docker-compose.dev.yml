@@ -1,0 +1,16 @@
+# ==============================================================================
+# Docker Compose Override — Режим разработки (Hot-reload / Watch Mode)
+# ==============================================================================
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  nextalk-node:
+    command: ["node", "--watch", "server.js"]
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./src:/app/src
+      - ./server.js:/app/server.js
+      - ./scripts:/app/scripts
+      - ./public.pem:/app/public.pem:ro
+      - ./data:/app/data
