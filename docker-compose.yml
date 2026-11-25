@@ -20,7 +20,7 @@ services:
       - JWT_ISSUER=${JWT_ISSUER:-nextalk-auth}
       - JWT_TTL=${JWT_TTL:-604800}
       - DB_PATH=/app/data/nextalk.db
-      - AUTH_URL=${AUTH_URL:-http://host.docker.internal/nextalk-auth}
+      - AUTH_URL=${DOCKER_AUTH_URL:-http://nextalk-auth}
       - LOCALTUNNEL_ENABLED=${LOCALTUNNEL_ENABLED:-false}
       - LOCALTUNNEL_SUBDOMAIN=${LOCALTUNNEL_SUBDOMAIN:-}
     volumes:
@@ -58,7 +58,7 @@ services:
       - JWT_ISSUER=${JWT_ISSUER:-nextalk-auth}
       - JWT_TTL=${JWT_TTL:-604800}
       - DB_PATH=/app/data/nextalk-3002.db
-      - AUTH_URL=${AUTH_URL:-http://host.docker.internal/nextalk-auth}
+      - AUTH_URL=${DOCKER_AUTH_URL:-http://nextalk-auth}
       - LOCALTUNNEL_ENABLED=false
     volumes:
       - ./data/node2:/app/data
